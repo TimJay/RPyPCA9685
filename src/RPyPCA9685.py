@@ -65,42 +65,6 @@ class PCA9685:
     PWM/Servo Driver I2C interface [1]_
     '''
 
-    _offsets = {0: 0.0,
-               1: 0.0,
-               2: 0.0,
-               3: 0.0,
-               4: 0.0,
-               5: 0.0,
-               6: 0.0,
-               7: 0.0,
-               8: 0.0,
-               9: 0.0,
-               10: 0.0,
-               11: 0.0,
-               12: 0.0,
-               13: 0.0,
-               14: 0.0,
-               15: 0.0
-               }
-
-    _overscans = {0: 0.0,
-               1: 0.0,
-               2: 0.0,
-               3: 0.0,
-               4: 0.0,
-               5: 0.0,
-               6: 0.0,
-               7: 0.0,
-               8: 0.0,
-               9: 0.0,
-               10: 0.0,
-               11: 0.0,
-               12: 0.0,
-               13: 0.0,
-               14: 0.0,
-               15: 0.0
-               }
-
     _PRESCALE = 121  # = round(25MHz / (4096 * update_rate) - 1) [121 ~ 50Hz]
 
     _PULSE_START = 100
@@ -189,63 +153,17 @@ class PCA9685:
         self._valid_servo(servo_id)
         return (0x09 + 4 * servo_id)
 
-    def get_offset(self, servo_id):
-        '''
-        Get the center offset for servo_id (0.1 equals 10%)
-        :param servo_id: Must be in the range [0 .. 15]
-        '''
-        self._valid_servo(servo_id)
-        return self._offsets.get(servo_id)
-
-    def get_overscan(self, servo_id):
-        '''
-        Get the overscan for servo_id (0.1 equals -110% .. 110%)
-
-        The overscan allows to override the default
-        1ms .. 2ms range of the pulse.
-        :param servo_id: Must be in the range [0 .. 15]
-        '''
-        self._valid_servo(servo_id)
-        return self._overscans.get(servo_id)
-
-    def set_offset(self, servo_id, offset):
-        '''
-        Set the center offset for servo_id (0.1 equals 10%)
-        :param servo_id: Must be in the range [0 .. 15]
-        :param offset: An offset of 0.1 equals 10%
-        '''
-        self._valid_servo(servo_id)
-        self._offsets[servo_id] = offset
-
-    def set_overscan(self, servo_id, overscan):
-        '''
-        Set the overscan for servo_id (0.1 equals -110% .. 110%)
-        :param servo_id: Must be in the range [0 .. 15]
-        :param offset: An overscan of 0.1 equals -110 .. 110%
-        '''
-        self._valid_servo(servo_id)
-        self._overscans[servo_id] = overscan
-
     def set_position(self, servo_id, position):
         '''
         Set the position of servo_id taking offset and overscan into account.
         :param servo_id: Must be in the range [0 .. 15]
-        :param position: The position must be in the range [-100 .. 100]
+        :param position: The position is usually in the range [1000 .. 2000]
         '''
         self._valid_servo(servo_id)
-        if not (position >= -100.0 and position <= 100.0):
-            raise Exception("position must be in the range [-100.0 .. 100.0]")
-        center = ((self._PULSE_END_HIGH + self._PULSE_END_LOW) /
-                  2.0 * (1.0 + self.get_offset(servo_id)))
-        width = ((self._PULSE_END_HIGH - self._PULSE_END_LOW) / 2.0)
-        value = int(center + (position / 100.0) *
-                    (1.0 + self.get_overscan(servo_id)) * width)
-        self.master.transaction(writing_bytes(self.ADDRESS,
-                                              self.SERVO_OFF_LOW(servo_id),
-                                              getByte(value, 0)),
-                                writing_bytes(self.ADDRESS,
-                                              self.SERVO_OFF_HIGH(servo_id),
-                                              getByte(value, 1)))
+        if not (position > 0 and position < 3000):
+            raise Exception("position must be in the range [0 .. 3000]")
+        value = int((position - 1000) / (2000 - 1000) * (self._PULSE_END_HIGH - self._PULSE_END_LOW) + self._PULSE_END_LOW)
+        self.master.transaction(writing_bytes(self.ADDRESS, self.SERVO_OFF_LOW(servo_id), getByte(value, 0)), writing_bytes(self.ADDRESS, self.SERVO_OFF_HIGH(servo_id), getByte(value, 1)))
 
     def __init__(self, controller, address):
         '''
@@ -258,24 +176,16 @@ class PCA9685:
         '''
         self.master = I2CMaster(controller)
         self.ADDRESS = address
-        self._setRegister(self.REGISTERS().get("pre_scale"),
-                         self._PRESCALE)
-        self._clearBit(self.REGISTERS().get("mode1"),
-                      self.MODE1_BITS().get("allcall"))
-        self._setRegister(self.REGISTERS().get("all_on_low"),
-                         getByte(self._PULSE_START, 0))
-        self._setRegister(self.REGISTERS().get("all_on_high"),
-                         getByte(self._PULSE_START, 1))
+        self._setRegister(self.REGISTERS().get("pre_scale"), self._PRESCALE)
+        self._clearBit(self.REGISTERS().get("mode1"), self.MODE1_BITS().get("allcall"))
+        self._setRegister(self.REGISTERS().get("all_on_low"), getByte(self._PULSE_START, 0))
+        self._setRegister(self.REGISTERS().get("all_on_high"), getByte(self._PULSE_START, 1))
         center = int((self._PULSE_END_HIGH + self._PULSE_END_LOW) / 2.0)
-        self._setRegister(self.REGISTERS().get("all_off_low"),
-                         getByte(center, 0))
-        self._setRegister(self.REGISTERS().get("all_off_high"),
-                         getByte(center, 1))
-        self._clearBit(self.REGISTERS().get("mode1"),
-                      self.MODE1_BITS().get("sleep"))
+        self._setRegister(self.REGISTERS().get("all_off_low"), getByte(center, 0))
+        self._setRegister(self.REGISTERS().get("all_off_high"), getByte(center, 1))
+        self._clearBit(self.REGISTERS().get("mode1"), self.MODE1_BITS().get("sleep"))
         time.sleep(0.1)
-        self._setBit(self.REGISTERS().get("mode1"),
-                      self.MODE1_BITS().get("restart"))
+        self._setBit(self.REGISTERS().get("mode1"), self.MODE1_BITS().get("restart"))
         time.sleep(0.1)
 
     def __del__(self):
@@ -283,19 +193,14 @@ class PCA9685:
         Deactivate the PCA9685 by setting the sleep bit
         and frees the master from quick2wire i2c
         '''
-        self._setBit(self.REGISTERS().get("mode1"),
-                    self.MODE1_BITS().get("sleep"))
+        self._setBit(self.REGISTERS().get("mode1"), self.MODE1_BITS().get("sleep"))
         self.master.close()
 
     def _setRegister(self, register, value):
-        self.master.transaction(writing_bytes(self.ADDRESS, register,
-                                             getByte(value, 0)))
+        self.master.transaction(writing_bytes(self.ADDRESS, register, getByte(value, 0)))
 
     def _getRegister(self, register):
-        return self.master.transaction(
-                                   writing_bytes(self.ADDRESS, register),
-                                   reading(self.ADDRESS, 1)
-                                   )[0][0]
+        return self.master.transaction(writing_bytes(self.ADDRESS, register), reading(self.ADDRESS, 1))[0][0]
 
     def _getBit(self, register, bit):
         b = self._getRegister(register)
